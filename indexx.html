@@ -1,0 +1,449 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Signal Pipeline Trace</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* layout concept: a vertical rail of four numbered, sequential stages, ending in a
+   theoretical glossy preview that intentionally breaks the muted "working" palette */
+:root{
+  --bg:#faf7f1; --surface:#ffffff; --surface-2:#f1ecdf; --border:#e4dcc8;
+  --fg:#241f16; --fg-dim:#766d58; --accent:#a6631a;
+  --kept:#3c7a5c; --kept-bg:#e7f0e7; --discard:#a4432b; --discard-bg:#f4e6e0;
+  --flag:#a6631a; --flag-bg:#f3e8d6;
+  --font-display:'IBM Plex Serif',Georgia,'Times New Roman',serif;
+  --font-body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --font-mono:'IBM Plex Mono','Courier New',monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16140f; --surface:#1f1c15; --surface-2:#262219; --border:#3a3324;
+    --fg:#f0ead9; --fg-dim:#a99e86; --accent:#d79a4e;
+    --kept:#7fbf9b; --kept-bg:#1e2a22; --discard:#e08a71; --discard-bg:#2e201b;
+    --flag:#d79a4e; --flag-bg:#2d2415; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16140f; --surface:#1f1c15; --surface-2:#262219; --border:#3a3324;
+  --fg:#f0ead9; --fg-dim:#a99e86; --accent:#d79a4e;
+  --kept:#7fbf9b; --kept-bg:#1e2a22; --discard:#e08a71; --discard-bg:#2e201b;
+  --flag:#d79a4e; --flag-bg:#2d2415; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--fg); font-family:var(--font-body);
+  padding-left:max(16px, env(safe-area-inset-left,0px));
+  padding-right:max(16px, env(safe-area-inset-right,0px));
+}
+.wrap{max-width:780px;margin:0 auto;padding-block:40px 20px}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,40px);letter-spacing:-0.01em}
+h2{font-size:21px}
+p{line-height:1.55;color:var(--fg);margin:0}
+.dim{color:var(--fg-dim)}
+.mono{font-family:var(--font-mono)}
+b{color:var(--fg)}
+mark{background:var(--flag-bg);color:var(--flag);padding:0 3px;border-radius:3px;font-weight:600}
+
+header.top{display:flex;flex-direction:column;gap:14px;margin-bottom:12px}
+.eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px 18px;font-family:var(--font-mono);font-size:13px;color:var(--fg-dim);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding-block:12px;margin-top:4px}
+.meta-row b{font-weight:600}
+
+.rail{position:relative;margin-top:36px;padding-left:34px}
+.rail::before{content:"";position:absolute;left:11px;top:4px;bottom:4px;width:1px;background:var(--border)}
+.stage{position:relative;margin-bottom:18px}
+.stage::before{
+  content:attr(data-n);position:absolute;left:-34px;top:2px;width:23px;height:23px;
+  border-radius:50%;background:var(--surface);border:1px solid var(--accent);color:var(--accent);
+  font-family:var(--font-mono);font-size:12px;display:flex;align-items:center;justify-content:center;
+}
+details{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary .s-title{display:flex;flex-direction:column;gap:3px;min-width:0}
+summary .s-title h2{font-size:17px}
+summary .chev{font-family:var(--font-mono);color:var(--fg-dim);transition:transform .15s ease;flex:none}
+details[open] summary .chev{transform:rotate(90deg)}
+.stage-body{padding:4px 18px 20px;border-top:1px solid var(--border)}
+
+/* intake form */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label{font-family:var(--font-mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg-dim)}
+.field select,.field input{
+  font-family:var(--font-body);font-size:14px;color:var(--fg);background:var(--surface-2);
+  border:1px solid var(--border);border-radius:7px;padding:9px 10px;width:100%;
+}
+.field.span2{grid-column:span 2}
+@media (max-width:480px){.field.span2{grid-column:span 1}}
+.pillgroup{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.pill{
+  font-family:var(--font-mono);font-size:12.5px;border-radius:999px;padding:6px 12px;
+  border:1px solid var(--accent);background:var(--flag-bg);color:var(--accent);
+}
+.run-row{display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap}
+.run-btn{
+  font-family:var(--font-mono);font-size:13px;border:1px solid var(--accent);background:var(--accent);
+  color:var(--surface);padding:10px 18px;border-radius:7px;cursor:default;opacity:.92;
+}
+.run-row .cap{font-size:12.5px;color:var(--fg-dim)}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{font-family:var(--font-mono);font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--fg)}
+.round{margin-top:16px}
+.round:first-child{margin-top:4px}
+.round h3{font-size:13px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--fg-dim);font-weight:600}
+.round p.why{font-size:13.5px;margin-top:4px;color:var(--fg-dim)}
+
+/* ledger */
+.ledger{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.ledger-row{display:flex;gap:12px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:12px 14px}
+.status{flex:none;font-family:var(--font-mono);font-size:11px;padding:4px 9px;border-radius:999px;white-space:nowrap;margin-top:1px}
+.status.kept{background:var(--kept-bg);color:var(--kept)}
+.status.discard{background:var(--discard-bg);color:var(--discard)}
+.status.flag{background:var(--flag-bg);color:var(--flag)}
+.ledger-row .hit{font-weight:600;font-size:13.5px}
+.ledger-row .reason{font-size:13px;color:var(--fg-dim);margin-top:2px}
+
+/* shortlist */
+.account{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-top:16px}
+.account:first-child{margin-top:0}
+.account .head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.account h3{font-size:17px}
+.account .loc{font-family:var(--font-mono);font-size:12px;color:var(--fg-dim);margin-top:2px}
+.badge{font-family:var(--font-mono);font-size:11px;padding:4px 9px;border-radius:999px;white-space:nowrap;flex:none}
+.badge.high{background:var(--kept-bg);color:var(--kept)}
+.badge.medium{background:var(--flag-bg);color:var(--flag)}
+.badge.low{background:var(--discard-bg);color:var(--discard)}
+.account .block{margin-top:12px}
+.account .block .lbl{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);margin-bottom:4px}
+.account .block p{font-size:13.5px}
+.msg{
+  font-family:var(--font-mono);font-size:12.5px;line-height:1.6;background:var(--surface-2);
+  border:1px dashed var(--border);border-radius:8px;padding:12px 14px;white-space:pre-wrap;color:var(--fg);
+}
+
+/* theoretical preview — a literal mock of the finished document, deliberately fixed
+   white "paper" regardless of theme, so it reads as content rather than UI chrome */
+.preview-wrap{margin-top:40px}
+.preview-wrap .eyebrow2{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.preview-wrap .lead{margin-top:6px;font-size:13.5px;color:var(--fg-dim);max-width:60ch}
+.preview-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px;max-width:700px}
+.paper{
+  margin-top:16px; background:#ffffff; color:#1a1a1a; border-radius:10px;
+  padding:36px clamp(20px,5vw,48px); box-shadow:0 10px 34px rgba(0,0,0,.14);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+.paper h2{color:#111;font-family:inherit;font-size:30px;font-weight:700;margin-bottom:18px}
+.paper h3{color:#111;font-family:inherit;font-size:17px;font-weight:700;margin:22px 0 10px}
+.paper h4{color:#111;font-family:inherit;font-size:15.5px;font-weight:700;margin:18px 0 10px}
+.paper p{color:#1a1a1a;font-family:inherit;font-size:14.5px;line-height:1.6;margin:10px 0}
+.paper ul{margin:6px 0 14px;padding-left:22px}
+.paper li{color:#1a1a1a;font-size:14.5px;line-height:1.6;margin:4px 0}
+.paper a{color:#1558d6}
+.paper hr{border:none;border-top:1px solid #e2e2e2;margin:18px 0}
+.paper .excerpt-note{font-size:12.5px;color:#8a8a8a;font-style:italic;margin-top:18px}
+
+footer{margin-top:40px;padding:18px 0 60px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+footer p{font-size:12.5px;color:var(--fg-dim)}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <span class="eyebrow">Pipeline replay · not a live search</span>
+  <h1>Signal Pipeline Trace</h1>
+  <p class="dim">Every query, every discard, before the signals that survived — a replay of the change-readiness scan run on Oct 26, 2026.</p>
+  <div class="meta-row">
+    <span><b>Run date:</b> Oct 26, 2026</span>
+    <span><b>Sources:</b> open web only</span>
+    <span><b>CRM touched:</b> no — never queried</span>
+  </div>
+</header>
+
+<div class="rail">
+
+  <div class="stage" data-n="1">
+    <details open>
+      <summary>
+        <div class="s-title"><h2>Intake</h2><span class="dim" style="font-size:13px">What this run was asked to find</span></div>
+        <span class="chev">›</span>
+      </summary>
+      <div class="stage-body">
+        <p>The brief, as it would be entered before a scan — not output from this run, the inputs that shaped it.</p>
+        <div class="form-grid">
+          <div class="field span2">
+            <label>What does your company sell?</label>
+            <input type="text" value="Organisational change &amp; transformation advisory services" readonly>
+          </div>
+          <div class="field">
+            <label>Industry you sell into</label>
+            <select>
+              <option selected>Cross-industry (enterprise transformation)</option>
+              <option>Financial services</option>
+              <option>Telecommunications</option>
+              <option>Public sector / government</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Target company size</label>
+            <select>
+              <option>SMB (&lt;500 employees)</option>
+              <option>Mid-market (500–5,000)</option>
+              <option selected>Enterprise (5,000–50,000)</option>
+              <option>Large enterprise / public sector (50,000+)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Lookback window</label>
+            <select>
+              <option selected>Past 1–2 weeks</option>
+              <option>Past month</option>
+              <option>Past quarter</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Optional — company website</label>
+            <input type="text" placeholder="e.g. acme.com" value="">
+          </div>
+          <div class="field span2">
+            <label>Target geography</label>
+            <div class="pillgroup">
+              <span class="pill">Singapore</span><span class="pill">Thailand</span>
+              <span class="pill">Brunei</span><span class="pill">Philippines</span>
+            </div>
+          </div>
+          <div class="field span2">
+            <label>Signal types to watch for</label>
+            <div class="pillgroup">
+              <span class="pill">Restructuring</span><span class="pill">M&amp;A</span>
+              <span class="pill">Leadership change</span><span class="pill">System / ERP change</span>
+              <span class="pill">Large-scale hiring</span><span class="pill">Government programmes</span>
+              <span class="pill">AI / operating-model shift</span>
+            </div>
+          </div>
+        </div>
+        <div class="run-row">
+          <span class="run-btn">Run scan →</span>
+          <span class="cap">Illustrative — this page replays one completed scan, it doesn't trigger a new one.</span>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage" data-n="2">
+    <details>
+      <summary>
+        <div class="s-title"><h2>Search waves</h2><span class="dim" style="font-size:13px">3 rounds, 30+ literal queries</span></div>
+        <span class="chev">›</span>
+      </summary>
+      <div class="stage-body">
+        <div class="round">
+          <h3>Round 1 — broad sweep</h3>
+          <p class="why">One query per category, per country. Came back mostly generic — conference listings, explainer posts, old bios.</p>
+          <div class="chips">
+            <span class="chip">Singapore digital transformation initiative announcement October 2026</span>
+            <span class="chip">Thailand digital transformation announcement October 2026</span>
+            <span class="chip">Philippines digital transformation initiative October 2026</span>
+            <span class="chip">Brunei digital transformation government initiative 2026</span>
+          </div>
+        </div>
+        <div class="round">
+          <h3>Round 2 — narrowed by site and named role</h3>
+          <p class="why">Round 1 was too generic to anchor a real organisation, so the next pass restricted to named outlets and named titles.</p>
+          <div class="chips">
+            <span class="chip">site:businesstimes.com.sg transformation OR "new CEO" October 2026</span>
+            <span class="chip">site:bangkokpost.com transformation OR restructuring OR merger October 2026</span>
+            <span class="chip">Singapore "Head of Transformation" appointed news</span>
+            <span class="chip">Thailand bank OR SET-listed company "new CEO" October 2026</span>
+          </div>
+        </div>
+        <div class="round">
+          <h3>Round 3 — named-lead follow-up and verification</h3>
+          <p class="why">Once a candidate surfaced, a targeted query plus a direct fetch of the page confirmed or killed it.</p>
+          <div class="chips">
+            <span class="chip">regional telecom operator restructuring, strategic review October 2026</span>
+            <span class="chip">century-old consumer bank names new CEO, digital transformation October 2026</span>
+            <span class="chip">diversified telecom conglomerate "AI-first" workforce transformation</span>
+            <span class="chip">national telecom carrier AI investment business gains October 2026</span>
+            <span class="chip">[incoming CEO] [regional telecom operator] LinkedIn</span>
+            <span class="chip">[group CEO] [diversified telecom conglomerate] LinkedIn</span>
+            <span class="chip">+ 20 more, grouped by lead</span>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage" data-n="3">
+    <details>
+      <summary>
+        <div class="s-title"><h2>Raw hit ledger</h2><span class="dim" style="font-size:13px">2 kept · 2 flagged · 2 discarded</span></div>
+        <span class="chev">›</span>
+      </summary>
+      <div class="stage-body">
+        <p>A search snippet's date is a claim, not a fact. Opening the actual page is what separated these.</p>
+        <div class="ledger">
+          <div class="ledger-row"><span class="status kept">kept</span><div><div class="hit">Public-sector retrenchment, phase 2 of 3</div><div class="reason">Fetch <mark>confirmed Oct 22, 2026</mark> — matched the restructuring category directly.</div></div></div>
+          <div class="ledger-row"><span class="status kept">kept</span><div><div class="hit">"AI-first" workforce pledge, named executive</div><div class="reason"><mark>Confirmed Oct 20, 2026</mark>, concrete commitment with a one-year target.</div></div></div>
+          <div class="ledger-row"><span class="status flag">flagged</span><div><div class="hit">Telecom M&amp;A talks + CEO succession</div><div class="reason"><mark>Outside the 2-week window</mark> but the strongest signal available for that market.</div></div></div>
+          <div class="ledger-row"><span class="status flag">flagged</span><div><div class="hit">National digital economy remarks, ministerial level</div><div class="reason"><mark>National policy, not a company</mark> — kept as the only credible lead this cycle.</div></div></div>
+          <div class="ledger-row"><span class="status discard">discarded</span><div><div class="hit">"300 jobs, transformation plan" headline</div><div class="reason">Same headline, <mark>wrong decade</mark> — article was from 2018.</div></div></div>
+          <div class="ledger-row"><span class="status discard">discarded</span><div><div class="hit">Core banking overhaul, regional bank</div><div class="reason">Real project, but <mark>already two years old</mark> by this cycle.</div></div></div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="stage" data-n="4">
+    <details open>
+      <summary>
+        <div class="s-title"><h2>Shortlist</h2><span class="dim" style="font-size:13px">The accounts worth a conversation</span></div>
+        <span class="chev">›</span>
+      </summary>
+      <div class="stage-body">
+
+        <div class="account">
+          <div class="head"><div><h3>Public-Sector Technology Agency</h3><div class="loc">Singapore · national press, Oct 2026</div></div><span class="badge high">High</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>A multi-year shift is underway from outsourced delivery to in-house ownership — staff are being moved, not just cut, which means there's a story about the transition worth being part of.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>Keeping the message consistent across several waves of change stretching into 2027, without burning out the people still being redeployed.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Head of People &amp; Organisational Development (public sector)</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+I saw that [Account] is moving through a multi-phase shift toward in-house ownership — that kind of staged change usually lives or dies on how consistent the story stays from one phase to the next.
+Would it be useful to compare notes on how you're keeping that consistent?</div></div>
+        </div>
+
+        <div class="account">
+          <div class="head"><div><h3>Regional Telecom Operator</h3><div class="loc">Singapore · trade press + filing, Sept 2026</div></div><span class="badge high">High</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>A new CEO is stepping into the seat at the exact moment the company is in early talks to acquire a competitor — two disruptions landing at once.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>No integration plan exists yet since the deal isn't confirmed, but whoever leads it inherits a messy consolidation the moment it closes.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Incoming CEO's office / transformation lead</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+Congratulations to [Account]'s incoming CEO on the move — taking that on while a possible consolidation is in the works is a lot to hold at once.
+Happy to share how other leaders have set the tone before a deal like that even closes.</div></div>
+        </div>
+
+        <div class="account">
+          <div class="head"><div><h3>Diversified Telecom Conglomerate</h3><div class="loc">Thailand · trade press, Oct 2026</div></div><span class="badge high">High</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>Leadership has publicly committed to upskilling the entire workforce within a year and flattening the org structure — a top-down mandate with a hard deadline attached.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>Turning a public promise into something the whole workforce actually absorbs, not just a technology rollout.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Chief People Officer / Head of Organisational Development</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+I caught your leadership's comments on bringing the whole organisation along on the AI shift within a year — that's an ambitious adoption target on a tight runway.
+Would it help to talk through how other large workforces have hit numbers like that?</div></div>
+        </div>
+
+        <div class="account">
+          <div class="head"><div><h3>Consumer Bank, Century-Old Institution</h3><div class="loc">Philippines · national press, Oct 2026</div></div><span class="badge medium">Medium</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>An internal successor is taking the top seat on a long runway — a natural moment to extend the transformation story before the handover actually happens.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>Keeping momentum alive during a six-month transition window without it quietly stalling.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Office of the incoming CEO / Head of Consumer Banking Transformation</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+Congratulations on the upcoming move into the CEO role at [Account] — the months before a handover like this are usually when the next chapter actually gets written.
+Would it be worth a conversation before the transition takes effect?</div></div>
+        </div>
+
+        <div class="account">
+          <div class="head"><div><h3>National Telecom Carrier</h3><div class="loc">Philippines · national press, Oct 2026</div></div><span class="badge medium">Medium</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>AI adoption has already succeeded at scale — leadership's own language shows the focus is shifting to proving sustained value, not just usage.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>Governing a large grassroots builder community so it doesn't fragment as it keeps scaling.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Office of the CEO / cross-functional AI programme lead</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+I saw your CEO's comment about measuring what AI actually improves, not just who's using it — that's the right next question to be asking.
+Curious how you're thinking about keeping that consistent as the builder community keeps growing.</div></div>
+        </div>
+
+        <div class="account">
+          <div class="head"><div><h3>National Government — Digital Economy Programme</h3><div class="loc">Brunei · ministerial remarks, Oct 2026</div></div><span class="badge low">Low–Med</span></div>
+          <div class="block"><div class="lbl">Angle to approach account</div><p>A national diversification agenda spanning government, business and AI — directional, not yet assigned to a specific implementing team.</p></div>
+          <div class="block"><div class="lbl">What they're facing</div><p>Translating a blueprint into an executable, staffed programme with a named owner.</p></div>
+          <div class="block"><div class="lbl">Who to approach</div><p>Ministry economic policy office — no named lead yet</p></div>
+          <div class="block"><div class="lbl">Suggested message</div><div class="msg">Hi [Name], this is [Your Name] from [Your Company].
+I've been following the national digital economy announcements — an ambitious agenda spanning government, business and AI.
+Would it be useful to talk through how other national programmes at this stage have structured the people side of rollout?</div></div>
+        </div>
+
+      </div>
+    </details>
+  </div>
+
+</div>
+
+<div class="preview-wrap">
+  <span class="eyebrow2">Theoretical preview · not generated from live data</span>
+  <p class="lead">Everything above is the working trace. This is the actual document the trace builds toward — one full organisation profile, shown as it would read on the page. Change the fields below to show this for a different week or a different set of markets.</p>
+
+  <div class="preview-controls">
+    <div class="field">
+      <label>Week of</label>
+      <input type="text" id="ctrl-week" value="October 26, 2026">
+    </div>
+    <div class="field">
+      <label>Markets covered</label>
+      <input type="text" id="ctrl-markets" value="Singapore, Thailand, Brunei, Philippines">
+    </div>
+  </div>
+
+  <div class="paper" id="paper-doc"></div>
+</div>
+
+<script>
+(function(){
+  function paperHTML(week, markets){
+    return ''
+      + '<h2>Account Signal Briefing</h2>'
+      + '<p><b>Week of:</b> ' + week + '<br><b>Markets covered:</b> ' + markets + '</p>'
+      + '<hr>'
+      + '<h3>Organisation Profiles</h3>'
+      + '<h4>Public-Sector Technology Agency (Singapore)</h4>'
+      + '<p><b>Signal Detected:</b> A public-sector technology agency is carrying out a multi-phase workforce restructuring, shifting from outsourced, vendor-led delivery toward in-house digital ownership. The latest of several planned phases affected a tranche of frontline technology roles, with further phases expected into next year; affected staff are being offered redeployment and reskilling pathways rather than straightforward termination. <a href="#">Source</a>.</p>'
+      + '<p><b>Signal Strength:</b> High. The restructuring spans multiple phases over more than a year, confirmed through direct agency and government statements, with explicit emphasis on redeployment over redundancy.</p>'
+      + '<p><b>Department / Role Driving Change:</b> The agency&rsquo;s internal people and organisational development function. No single named executive sponsor was disclosed publicly.</p>'
+      + '<p><b>Why It&rsquo;s a Change Management Opportunity:</b></p>'
+      + '<ul><li>A multi-phase programme spanning more than a year needs consistent sponsor messaging and stakeholder management across each wave, which a single internal HR cycle is unlikely to sustain alone.</li>'
+      + '<li>Redeploying affected staff into new roles through reskilling and conversion pathways is an adoption challenge, not just a redundancy exercise.</li></ul>'
+      + '<p><b>Why They Would Choose Us:</b></p>'
+      + '<ul><li>The agency has publicly framed the restructuring around retaining and retraining staff rather than cost-cutting, which matches a people-focused change approach.</li>'
+      + '<li>A phased, multi-year programme benefits from an external framework that keeps messaging and sponsorship consistent from one phase to the next.</li></ul>'
+      + '<p><b>Why They Might Not Choose Us:</b></p>'
+      + '<ul><li>Public-sector procurement typically runs through formal tender panels, which can slow or block direct engagement with an external commercial advisory firm.</li>'
+      + '<li>The agency may already have in-house organisational development capability built for this kind of internal transition.</li></ul>'
+      + '<p><b>Suggested Entry Strategy:</b></p>'
+      + '<ul><li>Approach the agency&rsquo;s people and organisational development function, positioning support for the in-house ownership model rather than the restructuring itself.</li>'
+      + '<li>Track the agency&rsquo;s public communications for the next phase of the programme and position ahead of that announcement.</li></ul>'
+      + '<p class="excerpt-note">Excerpt — the full document continues with one profile per organisation (matching the shortlist above), then the summary table and outreach list.</p>';
+  }
+
+  var paper = document.getElementById('paper-doc');
+  var weekInput = document.getElementById('ctrl-week');
+  var marketsInput = document.getElementById('ctrl-markets');
+  var state = { week: weekInput.value, markets: marketsInput.value };
+
+  try{
+    var saved = JSON.parse(localStorage.getItem('sig-preview-state') || 'null');
+    if(saved && saved.week && saved.markets){
+      state = saved;
+      weekInput.value = state.week;
+      marketsInput.value = state.markets;
+    }
+  }catch(e){}
+
+  function render(){
+    paper.innerHTML = paperHTML(state.week, state.markets);
+    try{ localStorage.setItem('sig-preview-state', JSON.stringify(state)); }catch(e){}
+  }
+
+  weekInput.addEventListener('input', function(){ state.week = weekInput.value; render(); });
+  marketsInput.addEventListener('input', function(){ state.markets = marketsInput.value; render(); });
+
+  render();
+})();
+</script>
+
+<footer>
+  <p><b>What this page is:</b> a replay of one completed run, not a live tool. Re-running it means asking Claude again with this brief.</p>
+  <p><b>What it never touched:</b> Salesforce or any CRM, at any stage.</p>
+</footer>
+
+</div>
+
+</body></html>
